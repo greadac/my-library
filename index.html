@@ -723,15 +723,19 @@ function renderStars(n) {
 // ══════════════════════════════════════
 // 책 커버 HTML
 // ══════════════════════════════════════
+function esc(str) {
+  return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
 function makeCoverEl(book, size='small') {
-  const initials = (book.title||'책').slice(0,2);
-  const color    = book.color || COVER_COLORS[0];
-  const url      = book.coverUrl || '';
+  const initials = esc((book.title||'책').slice(0,2));
+  const color    = esc(book.color || COVER_COLORS[0]);
+  const url      = esc(book.coverUrl || '');
 
   if(size==='small') {
     if(url) return `<div class="book-cover" style="background:${color};padding:0;overflow:hidden">
       <img src="${url}" alt="${initials}" style="width:100%;height:100%;object-fit:cover;display:block"
-           onerror="this.parentElement.innerHTML='<div class=\"book-cover-spine\"></div>${initials}'">
+           onerror="this.style.display='none';this.parentElement.style.display='flex';this.parentElement.insertAdjacentHTML('beforeend','<div class=\"book-cover-spine\"></div>${initials}')">
     </div>`;
     return `<div class="book-cover" style="background:${color}">
       <div class="book-cover-spine"></div>${initials}
@@ -739,7 +743,7 @@ function makeCoverEl(book, size='small') {
   } else {
     if(url) return `<div class="done-cover" style="background:${color};padding:0;overflow:hidden">
       <img src="${url}" alt="${initials}" style="width:100%;height:100%;object-fit:cover;display:block"
-           onerror="this.parentElement.innerHTML='<div class=\"done-cover-spine\"></div>${initials}'">
+           onerror="this.style.display='none'">
     </div>`;
     return `<div class="done-cover" style="background:${color}">
       <div class="done-cover-spine"></div>${initials}
@@ -770,13 +774,13 @@ function renderBookList() {
 
   el.innerHTML = filtered.map(b => {
     const sentCount = sentences.filter(s=>s.bookId===b.id).length;
-    return `<div class="book-item" onclick="openDetailModal('${b.id}')">
+    return `<div class="book-item" onclick="openDetailModal('${esc(b.id)}')">
       ${makeCoverEl(b,'small')}
       <div class="book-info">
-        <div class="book-title">${b.title}</div>
-        <div class="book-author">${[b.author,b.publisher].filter(Boolean).join(' · ')}</div>
+        <div class="book-title">${esc(b.title)}</div>
+        <div class="book-author">${esc([b.author,b.publisher].filter(Boolean).join(' · '))}</div>
         <div class="book-meta">
-          <span class="status-badge s-${b.status}">${statusLabel(b.status)}</span>
+          <span class="status-badge s-${esc(b.status)}">${statusLabel(b.status)}</span>
           ${b.rating?`<span class="rating-stars">${'★'.repeat(b.rating)}</span>`:''}
           ${sentCount?`<span style="font-size:0.68rem;color:var(--text3)">✍️ ${sentCount}</span>`:''}
         </div>
@@ -815,9 +819,9 @@ function renderDoneGrid() {
     html += `<div class="section-label">📅 ${yr}년 (${byYear[yr].length}권)</div>
     <div class="done-grid">
       ${byYear[yr].map(b=>`
-        <div class="done-card" onclick="openDetailModal('${b.id}')">
+        <div class="done-card" onclick="openDetailModal('${esc(b.id)}')">
           ${makeCoverEl(b,'done')}
-          <div class="done-title">${b.title}</div>
+          <div class="done-title">${esc(b.title)}</div>
           ${b.rating?`<div class="done-rating">${'★'.repeat(b.rating)}</div>`:''}
         </div>`).join('')}
     </div>`;
@@ -945,14 +949,14 @@ function openDetailModal(id) {
 
   // 메모
   document.getElementById('detail-memo-block').innerHTML = b.memo
-    ? `<div style="background:var(--surface2);border-radius:8px;padding:10px 13px;font-size:0.83rem;color:var(--text2);line-height:1.7;margin-bottom:12px">${b.memo}</div>` : '';
+    ? `<div style="background:var(--surface2);border-radius:8px;padding:10px 13px;font-size:0.83rem;color:var(--text2);line-height:1.7;margin-bottom:12px">${esc(b.memo)}</div>` : '';
 
   // 상태/날짜
   document.getElementById('detail-progress').innerHTML = `
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-      <span class="status-badge s-${b.status}">${statusLabel(b.status)}</span>
-      ${b.addedAt?`<span style="font-size:0.72rem;color:var(--text3)">추가: ${b.addedAt}</span>`:''}
-      ${b.doneAt&&b.status==='완독'?`<span style="font-size:0.72rem;color:var(--amber)">완독: ${b.doneAt}</span>`:''}
+      <span class="status-badge s-${esc(b.status)}">${statusLabel(b.status)}</span>
+      ${b.addedAt?`<span style="font-size:0.72rem;color:var(--text3)">추가: ${esc(b.addedAt)}</span>`:''}
+      ${b.doneAt&&b.status==='완독'?`<span style="font-size:0.72rem;color:var(--amber)">완독: ${esc(b.doneAt)}</span>`:''}
     </div>`;
 
   // 이 책의 문장들
@@ -961,9 +965,9 @@ function openDetailModal(id) {
   if(bookSents.length) {
     sentEl.innerHTML = `<div class="section-label">✍️ 수집한 문장 (${bookSents.length})</div>`
       + bookSents.map(s=>`
-        <div class="sentence-item" onclick="openSentModal('${s.id}')">
-          <div class="sent-text">"${s.text}"</div>
-          <div class="sent-meta">${s.page?`p.${s.page} · `:''}${s.memo||''}</div>
+        <div class="sentence-item" onclick="openSentModal('${esc(s.id)}')">
+          <div class="sent-text">"${esc(s.text)}"</div>
+          <div class="sent-meta">${s.page?`p.${esc(s.page)} · `:''}${esc(s.memo||'')}</div>
         </div>`).join('');
   } else {
     sentEl.innerHTML = '';
@@ -1067,11 +1071,11 @@ function renderSentList() {
   Object.entries(byBook).forEach(([bookId, sents]) => {
     const book = books.find(b=>b.id===bookId);
     const bookTitle = book ? book.title : '알 수 없는 책';
-    html += `<div class="sent-book-tag">📖 ${bookTitle}</div>`;
+    html += `<div class="sent-book-tag">📖 ${esc(bookTitle)}</div>`;
     html += sents.map(s => `
-      <div class="sentence-item" onclick="openSentModal('${s.id}')">
-        <div class="sent-text">"${s.text}"</div>
-        <div class="sent-meta">${s.page?`p.${s.page}`:''} ${s.memo?'· '+s.memo:''}</div>
+      <div class="sentence-item" onclick="openSentModal('${esc(s.id)}')">
+        <div class="sent-text">"${esc(s.text)}"</div>
+        <div class="sent-meta">${s.page?`p.${esc(s.page)}`:''} ${s.memo?'· '+esc(s.memo):''}</div>
       </div>`).join('');
   });
   el.innerHTML = html;
