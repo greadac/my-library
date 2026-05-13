@@ -504,7 +504,18 @@ input[type="color"] { padding: 4px; height: 38px; cursor: pointer; }
     <input type="text" id="bm-publisher" placeholder="출판사">
 
     <label>ISBN</label>
-    <input type="number" id="bm-isbn" placeholder="13자리 숫자" inputmode="numeric">
+    <div style="display:flex;gap:8px">
+      <input type="number" id="bm-isbn" placeholder="13자리 숫자" inputmode="numeric" style="flex:1">
+      <button onclick="searchByISBN()" style="background:var(--amber);border:none;border-radius:var(--radius-sm);color:#1a1408;font-size:0.82rem;font-weight:700;padding:0 14px;cursor:pointer;font-family:inherit;white-space:nowrap;flex-shrink:0">🔍 검색</button>
+    </div>
+    <!-- 검색 결과 -->
+    <div id="isbn-result" style="display:none;margin-top:10px;background:rgba(201,147,58,0.08);border:1px solid rgba(201,147,58,0.3);border-radius:var(--radius-sm);padding:12px">
+      <div style="font-size:0.72rem;color:var(--amber);font-weight:700;margin-bottom:6px">✅ 책 정보를 찾았어요!</div>
+      <div id="isbn-result-body" style="font-size:0.82rem;color:var(--text2);line-height:1.7"></div>
+      <button onclick="applyISBNResult()" style="margin-top:10px;width:100%;background:var(--amber);border:none;border-radius:var(--radius-sm);color:#1a1408;font-size:0.83rem;font-weight:700;padding:9px;cursor:pointer;font-family:inherit">✍️ 이 정보로 채우기</button>
+    </div>
+    <div id="isbn-loading" style="display:none;text-align:center;padding:12px;font-size:0.82rem;color:var(--text3)">🔍 검색 중...</div>
+    <div id="isbn-error" style="display:none;margin-top:8px;font-size:0.78rem;color:var(--red)"></div>
 
     <label>상태</label>
     <select id="bm-status">
@@ -763,26 +774,58 @@ function renderBookList() {
   let filtered = bookFilter==='전체' ? books : books.filter(b=>b.status===bookFilter);
   filtered = [...filtered].sort((a,b) => a.title.localeCompare(b.title,'ko'));
 
+  el.innerHTML = '';
+
   if(!filtered.length) {
     el.innerHTML = `<div class="empty"><div class="icon">📭</div><p>${bookFilter==='전체'?'아직 책이 없어요<br>+ 버튼으로 추가해보세요':'해당하는 책이 없습니다'}</p></div>`;
     return;
   }
 
-  el.innerHTML = filtered.map(b => {
+  filtered.forEach(b => {
     const sentCount = sentences.filter(s=>s.bookId===b.id).length;
-    return `<div class="book-item" onclick="openDetailModal('${esc(b.id)}')">
-      ${makeCoverEl(b,'small')}
-      <div class="book-info">
-        <div class="book-title">${esc(b.title)}</div>
-        <div class="book-author">${esc([b.author,b.publisher].filter(Boolean).join(' · '))}</div>
-        <div class="book-meta">
-          <span class="status-badge s-${esc(b.status)}">${statusLabel(b.status)}</span>
-          ${b.rating?`<span class="rating-stars">${'★'.repeat(b.rating)}</span>`:''}
-          ${sentCount?`<span style="font-size:0.68rem;color:var(--text3)">✍️ ${sentCount}</span>`:''}
-        </div>
-      </div>
-    </div>`;
-  }).join('');
+    const item = document.createElement('div');
+    item.className = 'book-item';
+    item.onclick = () => openDetailModal(b.id);
+    item.innerHTML = makeCoverEl(b,'small');
+
+    const info = document.createElement('div');
+    info.className = 'book-info';
+
+    const title = document.createElement('div');
+    title.className = 'book-title';
+    title.textContent = b.title || '';
+
+    const author = document.createElement('div');
+    author.className = 'book-author';
+    author.textContent = [b.author, b.publisher].filter(Boolean).join(' · ');
+
+    const meta = document.createElement('div');
+    meta.className = 'book-meta';
+
+    const badge = document.createElement('span');
+    badge.className = `status-badge s-${b.status}`;
+    badge.textContent = statusLabel(b.status);
+    meta.appendChild(badge);
+
+    if(b.rating) {
+      const stars = document.createElement('span');
+      stars.className = 'rating-stars';
+      stars.textContent = '★'.repeat(b.rating);
+      meta.appendChild(stars);
+    }
+    if(sentCount) {
+      const sc = document.createElement('span');
+      sc.style.cssText = 'font-size:0.68rem;color:var(--text3)';
+      sc.textContent = `✍️ ${sentCount}`;
+      meta.appendChild(sc);
+    }
+
+    info.appendChild(title);
+    info.appendChild(author);
+    info.appendChild(meta);
+    item.appendChild(info);
+    el.appendChild(item);
+  });
 }
 
 function statusLabel(s) {
@@ -834,6 +877,12 @@ function openBookModal(id) {
   document.getElementById('book-modal-title').textContent = id ? '📚 책 수정' : '📚 책 추가';
   document.getElementById('book-delete-wrap').style.display = id ? 'block' : 'none';
   document.querySelectorAll('#bm-stars span').forEach(s => s.classList.remove('lit'));
+
+  // 검색 결과 초기화
+  document.getElementById('isbn-result').style.display  = 'none';
+  document.getElementById('isbn-loading').style.display = 'none';
+  document.getElementById('isbn-error').style.display   = 'none';
+  window._isbnData = null;
 
   if(id) {
     const b = books.find(x=>x.id===id);
@@ -1083,6 +1132,82 @@ function renderSentList() {
 function closeModal(id, e) {
   if(e && e.target !== document.getElementById(id)) return;
   document.getElementById(id).classList.remove('open');
+}
+
+// ══════════════════════════════════════
+// Open Library ISBN 자동 검색
+// ══════════════════════════════════════
+async function searchByISBN() {
+  const isbn = document.getElementById('bm-isbn').value.trim();
+  if(!isbn || isbn.length < 10) { showToast('ISBN을 입력하세요 (10~13자리)', 'err'); return; }
+
+  const resultEl  = document.getElementById('isbn-result');
+  const loadingEl = document.getElementById('isbn-loading');
+  const errorEl   = document.getElementById('isbn-error');
+  const bodyEl    = document.getElementById('isbn-result-body');
+
+  resultEl.style.display  = 'none';
+  errorEl.style.display   = 'none';
+  loadingEl.style.display = 'block';
+  window._isbnData = null;
+
+  try {
+    // Open Library API (CORS 허용, 무료, 키 불필요)
+    const url = `https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&format=json&jscop=data`;
+    const res  = await fetch(url);
+    const json = await res.json();
+    const key  = `ISBN:${isbn}`;
+    const book = json[key];
+
+    loadingEl.style.display = 'none';
+
+    if(!book) {
+      // Open Library에 없으면 제목 검색 안내
+      errorEl.textContent = '검색 결과가 없어요. 제목·저자를 직접 입력해 주세요.';
+      errorEl.style.display = 'block';
+      return;
+    }
+
+    // 데이터 파싱
+    const title     = book.title || '';
+    const authors   = book.authors  ? book.authors.map(a=>a.name).join(', ')  : '';
+    const publishers= book.publishers ? book.publishers.map(p=>p.name).join(', ') : '';
+    const coverUrl  = book.cover ? (book.cover.large || book.cover.medium || book.cover.small || '') : '';
+    const publishDate = book.publish_date || '';
+
+    window._isbnData = { title, authors, publishers, coverUrl, publishDate };
+
+    bodyEl.innerHTML = `
+      <div style="display:flex;gap:10px;align-items:flex-start">
+        ${coverUrl ? `<img src="${coverUrl}" style="width:44px;height:62px;object-fit:cover;border-radius:4px;flex-shrink:0">` : ''}
+        <div>
+          <div style="font-weight:700;color:var(--text);margin-bottom:3px">${esc(title)}</div>
+          ${authors    ? `<div style="color:var(--text3);font-size:0.78rem">${esc(authors)}</div>` : ''}
+          ${publishers ? `<div style="color:var(--text3);font-size:0.78rem">${esc(publishers)}</div>` : ''}
+          ${publishDate? `<div style="color:var(--text4);font-size:0.72rem;margin-top:2px">${esc(publishDate)}</div>` : ''}
+        </div>
+      </div>`;
+    resultEl.style.display = 'block';
+
+  } catch(e) {
+    loadingEl.style.display = 'none';
+    errorEl.textContent = '검색 실패. 네트워크를 확인해주세요.';
+    errorEl.style.display = 'block';
+  }
+}
+
+function applyISBNResult() {
+  const data = window._isbnData;
+  if(!data) return;
+
+  if(data.title)      document.getElementById('bm-title').value     = data.title;
+  if(data.authors)    document.getElementById('bm-author').value    = data.authors;
+  if(data.publishers) document.getElementById('bm-publisher').value = data.publishers;
+  if(data.coverUrl)   document.getElementById('bm-coverurl').value  = data.coverUrl;
+
+  updateCoverPreview();
+  document.getElementById('isbn-result').style.display = 'none';
+  showToast('✅ 책 정보가 채워졌어요!', 'ok');
 }
 
 // ══════════════════════════════════════
